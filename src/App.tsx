@@ -104,6 +104,7 @@ function App() {
   }, [showCameras])
 
   const handleRobotMovement = useCallback(() => {
+    const movedRobotNames: string[] = [];
     setGameState(prev => {
       if (prev.phase !== 'playing') return prev;
 
@@ -115,11 +116,7 @@ function App() {
           const newCam = possibleCams[Math.floor(Math.random() * possibleCams.length)]
           
           if (newCam !== robot.currentCam) {
-            toast.error(`${robot.name} is moving!`, {
-              icon: '🤖',
-              duration: 2000,
-              style: { background: '#1a1a1a', color: '#fff', border: '1px solid #dc2626' }
-            })
+            movedRobotNames.push(robot.name);
             return {
               ...robot,
               currentCam: newCam,
@@ -130,6 +127,14 @@ function App() {
         return robot
       })
       return { ...prev, robots: updatedRobots }
+    })
+    // After state update, show toasts
+    movedRobotNames.forEach(name => {
+      toast.error(`${name} is moving!`, {
+        icon: '🤖',
+        duration: 2000,
+        style: { background: '#1a1a1a', color: '#fff', border: '1px solid #dc2626' }
+      })
     })
   }, [])
 
@@ -207,7 +212,10 @@ function App() {
     toast.success('Night 1 begins...', {
       icon: '🌙',
       duration: 3000,
-      style: { background: '#1a1a1a', color: '#fff' }
+      style: {
+        background: '#1a1a1a',
+        color: '#fff'
+      }
     })
   }
 
