@@ -82,27 +82,7 @@ function App() {
     })
   }, [])
 
-  const handlePowerDrain = useCallback(() => {
-    setGameState(prev => {
-      if (prev.phase !== 'playing') return prev;
-      let drain = 1
-      if (prev.leftDoorClosed) drain += 2
-      if (prev.rightDoorClosed) drain += 2
-      if (showCameras) drain += 1
-
-      const newPower = Math.max(0, prev.powerLevel - drain)
-      if (newPower === 0) {
-        toast.error('POWER OUTAGE!', {
-          icon: '💀',
-          duration: 3000,
-          style: { background: '#dc2626', color: '#fff', fontSize: '20px' }
-        })
-        return { ...prev, powerLevel: 0, gameOver: true, phase: 'gameover' }
-      }
-      return { ...prev, powerLevel: newPower }
-    })
-  }, [showCameras])
-
+  
   const handleRobotMovement = useCallback(() => {
     const movedRobotNames: string[] = [];
     setGameState(prev => {
@@ -145,7 +125,7 @@ function App() {
         robot.currentCam === 1 && robot.moveNight <= prev.currentNight
       )
 
-      let gameOverReason: string | null = null;
+      let gameOverReason: string | null;
 
       if (robotsAtDoor.length > 0 && !prev.leftDoorClosed && !prev.rightDoorClosed) {
         gameOverReason = 'YOU DIED!';
