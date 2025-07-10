@@ -109,12 +109,12 @@ function App() {
       if (prev.phase !== 'playing') return prev;
 
       const updatedRobots = prev.robots.map(robot => {
-        if (robot.moveNight > prev.currentNight) return robot
+        if (robot.id === 'gen') return robot; // skip Gen
+        if (robot.moveNight > prev.currentNight) return robot;
 
         if (Math.random() < 0.3) {
-          const possibleCams = [1, 3, 4]
-          const newCam = possibleCams[Math.floor(Math.random() * possibleCams.length)]
-          
+          const possibleCams = [1, 3, 4];
+          const newCam = possibleCams[Math.floor(Math.random() * possibleCams.length)];
           if (newCam !== robot.currentCam) {
             movedRobotNames.push(robot.name);
             return {
@@ -128,7 +128,6 @@ function App() {
       })
       return { ...prev, robots: updatedRobots }
     })
-    // After state update, show toasts
     movedRobotNames.forEach(name => {
       toast.error(`${name} is moving!`, {
         icon: '🤖',
@@ -166,6 +165,125 @@ function App() {
       return prev
     })
   }, [])
+
+  const [genPhase, setGenPhase] = useState<'idle' | 'to3' | 'to1' | 'toDoor'>('idle');
+    const genDoorRef = useRef<'left' | 'right' | null>(null);
+
+  useEffect(() => {
+    if (gameState.phase !== 'playing' || gameState.currentNight < 1) return;
+    // Find Gen
+    const gen = gameState.robots.find(r => r.id === 'gen');
+    if (!gen) return;
+    let timer: NodeJS.Timeout;
+    if (genPhase === 'idle' && gen.currentCam === 4) {
+      timer = setTimeout(() => {
+        setGameState(prev => ({
+          ...prev,
+          robots: prev.robots.map(r =>
+            r.id === 'gen' ? { ...r, currentCam: 3, position: { x: 60, y: 50 } } : r
+          )
+        }));
+        setGenPhase('to3');
+      }, 10000);
+    } else if (genPhase === 'to3' && gen.currentCam === 3) {
+      timer = setTimeout(() => {
+        setGameState(prev => ({
+          ...prev,
+          robots: prev.robots.map(r =>
+            r.id === 'gen' ? { ...r, currentCam: 1, position: { x: 40, y: 60 } } : r
+          )
+        }));
+        setGenPhase('to1');
+      }, 8000);
+    } else if (genPhase === 'to1' && gen.currentCam === 1) {
+      timer = setTimeout(() => {
+        // Pick random door
+        const door = Math.random() < 0.5 ? 'left' : 'right';
+        genDoorRef.current = door;
+        setGameState(prev => ({
+          ...prev,
+          robots: prev.robots.map(r =>
+            r.id === 'gen'
+              ? { ...r, currentCam: door === 'left' ? 100 : 101, position: { x: door === 'left' ? 10 : 90, y: 50 } }
+              : r
+          )
+        }));
+        setGenPhase('toDoor');
+        toast.error(`Gen is at the ${door} door!`, {
+          icon: '🤖',
+          duration: 3000,
+          style: { background: '#1a1a1a', color: '#fff', border: '1px solid #dc2626' }
+        });
+      }, 2000);
+    }
+    return () => clearTimeout(timer);
+  }, [gameState.phase, gameState.currentNight, gameState.robots, genPhase]);
+
+  useEffect(() => {
+    if (gameState.phase !== 'playing') return;
+    const gen = gameState.robots.find(r => r.id === 'gen');
+    if (gen && gen.currentCam === 4 && genPhase !== 'idle') {
+      setGenPhase('idle');
+    }
+  }, [gameState.robots, gameState.phase, genPhase]);
+
+  const toggleDoor = (side: 'left' | 'right') => {
+    setGameState(prev => {
+      let newRobots = prev.robots;
+      // If Gen is at this door, reset him
+      const gen = prev.robots.find(r => r.id === 'gen');
+      if (gen && ((side === 'left' && gen.currentCam === 100) || (side === 'right' && gen.currentCam === 101))) {
+        newRobots = prev.robots.map(r =>
+          r.id === 'gen' ? { ...r, currentCam: 4, position: { x: 50, y: 50 } } : r
+        );
+        setGenPhase('idle');
+        toast.success('You blocked Gen! He returned to the stage.', {
+          icon: '🔒',
+          duration: 2000,
+          style: { background: '#1a1a1a', color: '#fff', border: '1px solid #22c55e' }
+        });
+      }
+      return {
+        ...prev,
+        [side === 'left' ? 'leftDoorClosed' : 'rightDoorClosed']: !prev[side === 'left' ? 'leftDoorClosed' : 'rightDoorClosed'],
+        robots: newRobots
+      };
+    });
+  };
+
+  const handlePowerDrain = useCallback(() => {
+    setGameState(prev => {
+      if (prev.phase !== 'playing') return prev;
+      let drain = 1
+      if (prev.leftDoorClosed) drain += 2
+      if (prev.rightDoorClosed) drain += 2
+      if (showCameras) drain += 1
+
+      const newPower = Math.max(0, prev.powerLevel - drain)
+      if (newPower === 0) {
+        toast.error('POWER OUTAGE!', {
+          icon: '💀',
+          duration: 3000,
+          style: { background: '#dc2626', color: '#fff', fontSize: '20px' }
+        })
+        return { ...prev, powerLevel: 0, gameOver: true, phase: 'gameover' }
+      }
+      return { ...prev, powerLevel: newPower }
+    })
+  }, [showCameras])
+
+  const getRobotsInCam = (camId: number) => {
+    return gameState.robots.filter(robot => {
+      if (robot.id === 'gen') {
+        if (camId === 1 && robot.currentCam === 1) return true;
+        if (camId === 3 && robot.currentCam === 3) return true;
+        if (camId === 4 && robot.currentCam === 4) return true;
+        // camId 100 = left door, 101 = right door
+        return false;
+      }
+      return robot.currentCam === camId && robot.moveNight <= gameState.currentNight;
+    });
+  };
 
   // Game timer
   useEffect(() => {
@@ -236,18 +354,17 @@ function App() {
     setShowCameras(false)
   }
 
-  const toggleDoor = (side: 'left' | 'right') => {
-    setGameState(prev => ({
-      ...prev,
-      [side === 'left' ? 'leftDoorClosed' : 'rightDoorClosed']: 
-        !prev[side === 'left' ? 'leftDoorClosed' : 'rightDoorClosed']
-    }))
-  }
-
   const getRobotsInCam = (camId: number) => {
-    return gameState.robots.filter(robot => 
-      robot.currentCam === camId && robot.moveNight <= gameState.currentNight
-    )
+    return gameState.robots.filter(robot => {
+      if (robot.id === 'gen') {
+        if (camId === 1 && robot.currentCam === 1) return true;
+        if (camId === 3 && robot.currentCam === 3) return true;
+        if (camId === 4 && robot.currentCam === 4) return true;
+        // camId 100 = left door, 101 = right door
+        return false;
+      }
+      return robot.currentCam === camId && robot.moveNight <= gameState.currentNight;
+    });
   }
 
   const formatTime = (seconds: number) => {
