@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from './components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { Badge } from './components/ui/badge'
 import { AlertTriangle, Camera, DoorOpen, DoorClosed, Power, Clock, Skull } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import toast from 'react-hot-toast'
+import toast, { Toaster } from 'react-hot-toast'
 
 interface Robot {
   id: string
@@ -60,94 +60,128 @@ function App() {
 
   const [showCameras, setShowCameras] = useState(false)
 
+  const handleGameTick = useCallback(() => {
+    setGameState(prev => {
+      if (prev.phase !== 'playing') return prev;
+
+      if (prev.timeRemaining <= 0) {
+        if (prev.currentNight === 5 && prev.bossActive) {
+          return { ...prev, victory: true, phase: 'gameover' }
+        }
+        toast.success(`Night ${prev.currentNight + 1} begins...`, {
+          icon: '🌙',
+          duration: 3000,
+          style: {
+            background: '#1a1a1a',
+            color: '#fff'
+          }
+        })
+        return { ...prev, currentNight: prev.currentNight + 1, timeRemaining: 300, powerLevel: 100 }
+      }
+      return { ...prev, timeRemaining: prev.timeRemaining - 1 }
+    })
+  }, [])
+
+  const handlePowerDrain = useCallback(() => {
+    setGameState(prev => {
+      if (prev.phase !== 'playing') return prev;
+      let drain = 1
+      if (prev.leftDoorClosed) drain += 2
+      if (prev.rightDoorClosed) drain += 2
+      if (showCameras) drain += 1
+
+      const newPower = Math.max(0, prev.powerLevel - drain)
+      if (newPower === 0) {
+        toast.error('POWER OUTAGE!', {
+          icon: '💀',
+          duration: 3000,
+          style: { background: '#dc2626', color: '#fff', fontSize: '20px' }
+        })
+        return { ...prev, powerLevel: 0, gameOver: true, phase: 'gameover' }
+      }
+      return { ...prev, powerLevel: newPower }
+    })
+  }, [showCameras])
+
+  const handleRobotMovement = useCallback(() => {
+    setGameState(prev => {
+      if (prev.phase !== 'playing') return prev;
+
+      const updatedRobots = prev.robots.map(robot => {
+        if (robot.moveNight > prev.currentNight) return robot
+
+        if (Math.random() < 0.3) {
+          const possibleCams = [1, 3, 4]
+          const newCam = possibleCams[Math.floor(Math.random() * possibleCams.length)]
+          
+          if (newCam !== robot.currentCam) {
+            toast.error(`${robot.name} is moving!`, {
+              icon: '🤖',
+              duration: 2000,
+              style: { background: '#1a1a1a', color: '#fff', border: '1px solid #dc2626' }
+            })
+            return {
+              ...robot,
+              currentCam: newCam,
+              position: { x: Math.random() * 80 + 10, y: Math.random() * 80 + 10 }
+            }
+          }
+        }
+        return robot
+      })
+      return { ...prev, robots: updatedRobots }
+    })
+  }, [])
+
+  const handleAttackCheck = useCallback(() => {
+    setGameState(prev => {
+      if (prev.phase !== 'playing') return prev;
+
+      const robotsAtDoor = prev.robots.filter(robot => 
+        robot.currentCam === 1 && robot.moveNight <= prev.currentNight
+      )
+
+      let gameOverReason: string | null = null;
+
+      if (robotsAtDoor.length > 0 && !prev.leftDoorClosed && !prev.rightDoorClosed) {
+        gameOverReason = 'YOU DIED!';
+      } else if (prev.bossActive && Math.random() < 0.1 && (!prev.leftDoorClosed || !prev.rightDoorClosed)) {
+        gameOverReason = 'THE BOSS GOT YOU!';
+      }
+
+      if (gameOverReason) {
+        toast.error(gameOverReason, {
+          icon: '💀',
+          duration: 3000,
+          style: { background: '#dc2626', color: '#fff', fontSize: '20px' }
+        })
+        return { ...prev, gameOver: true, phase: 'gameover' }
+      }
+
+      return prev
+    })
+  }, [])
+
   // Game timer
   useEffect(() => {
     if (gameState.phase !== 'playing') return
-
-    const timer = setInterval(() => {
-      setGameState(prev => {
-        if (prev.timeRemaining <= 0) {
-          // Night complete
-          if (prev.currentNight === 5 && prev.bossActive) {
-            return { ...prev, victory: true, phase: 'gameover' }
-          }
-          return { ...prev, currentNight: prev.currentNight + 1, timeRemaining: 300 }
-        }
-        return { ...prev, timeRemaining: prev.timeRemaining - 1 }
-      })
-    }, 1000)
-
+    const timer = setInterval(handleGameTick, 1000)
     return () => clearInterval(timer)
-  }, [gameState.phase])
+  }, [gameState.phase, handleGameTick])
 
   // Power drain
   useEffect(() => {
     if (gameState.phase !== 'playing') return
-
-    const powerDrain = setInterval(() => {
-      setGameState(prev => {
-        let drain = 1
-        if (prev.leftDoorClosed) drain += 2
-        if (prev.rightDoorClosed) drain += 2
-        if (showCameras) drain += 1
-
-        const newPower = Math.max(0, prev.powerLevel - drain)
-        if (newPower === 0) {
-          return { ...prev, powerLevel: 0, gameOver: true, phase: 'gameover' }
-        }
-        return { ...prev, powerLevel: newPower }
-      })
-    }, 2000)
-
+    const powerDrain = setInterval(handlePowerDrain, 2000)
     return () => clearInterval(powerDrain)
-  }, [gameState.phase, showCameras])
+  }, [gameState.phase, handlePowerDrain])
 
   // Robot movement
   useEffect(() => {
     if (gameState.phase !== 'playing') return
-
-    const moveRobots = setInterval(() => {
-      setGameState(prev => {
-
-
-        const updatedRobots = prev.robots.map(robot => {
-          if (robot.moveNight > prev.currentNight) return robot
-
-          // Random chance to move
-          if (Math.random() < 0.3) {
-            const possibleCams = [1, 3, 4] // Skip cam 2 (broken)
-            const newCam = possibleCams[Math.floor(Math.random() * possibleCams.length)]
-            
-            if (newCam !== robot.currentCam) {
-              toast.error(`${robot.name} is moving!`, {
-                icon: '🤖',
-                duration: 2000,
-                style: {
-                  background: '#1a1a1a',
-                  color: '#fff',
-                  border: '1px solid #dc2626'
-                }
-              })
-              
-              return {
-                ...robot,
-                currentCam: newCam,
-                position: {
-                  x: Math.random() * 80 + 10,
-                  y: Math.random() * 80 + 10
-                }
-              }
-            }
-          }
-          return robot
-        })
-
-        return { ...prev, robots: updatedRobots }
-      })
-    }, 8000)
-
+    const moveRobots = setInterval(handleRobotMovement, 8000)
     return () => clearInterval(moveRobots)
-  }, [gameState.phase, gameState.currentNight])
+  }, [gameState.phase, handleRobotMovement])
 
   // Boss activation on night 5
   useEffect(() => {
@@ -156,11 +190,7 @@ function App() {
       toast.error('THE BOSS IS COMING!', {
         icon: '💀',
         duration: 5000,
-        style: {
-          background: '#dc2626',
-          color: '#fff',
-          fontSize: '18px'
-        }
+        style: { background: '#dc2626', color: '#fff', fontSize: '18px' }
       })
     }
   }, [gameState.currentNight, gameState.bossActive])
@@ -168,57 +198,16 @@ function App() {
   // Check for robot attacks
   useEffect(() => {
     if (gameState.phase !== 'playing') return
-
-    const checkAttacks = setInterval(() => {
-      setGameState(prev => {
-        const robotsAtDoor = prev.robots.filter(robot => 
-          robot.currentCam === 1 && robot.moveNight <= prev.currentNight
-        )
-
-        if (robotsAtDoor.length > 0 && !prev.leftDoorClosed && !prev.rightDoorClosed) {
-          toast.error('YOU DIED!', {
-            icon: '💀',
-            duration: 3000,
-            style: {
-              background: '#dc2626',
-              color: '#fff',
-              fontSize: '20px'
-            }
-          })
-          return { ...prev, gameOver: true, phase: 'gameover' }
-        }
-
-        if (prev.bossActive && Math.random() < 0.1) {
-          if (!prev.leftDoorClosed || !prev.rightDoorClosed) {
-            toast.error('THE BOSS GOT YOU!', {
-              icon: '💀',
-              duration: 3000,
-              style: {
-                background: '#dc2626',
-                color: '#fff',
-                fontSize: '20px'
-              }
-            })
-            return { ...prev, gameOver: true, phase: 'gameover' }
-          }
-        }
-
-        return prev
-      })
-    }, 3000)
-
+    const checkAttacks = setInterval(handleAttackCheck, 3000)
     return () => clearInterval(checkAttacks)
-  }, [gameState.phase])
+  }, [gameState.phase, handleAttackCheck])
 
   const startGame = () => {
     setGameState(prev => ({ ...prev, phase: 'playing' }))
     toast.success('Night 1 begins...', {
       icon: '🌙',
       duration: 3000,
-      style: {
-        background: '#1a1a1a',
-        color: '#fff'
-      }
+      style: { background: '#1a1a1a', color: '#fff' }
     })
   }
 
@@ -262,6 +251,7 @@ function App() {
   if (gameState.phase === 'menu') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
+        <Toaster />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -300,6 +290,7 @@ function App() {
   if (gameState.phase === 'gameover') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
+        <Toaster />
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -338,6 +329,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
+      <Toaster />
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 p-4">
         <div className="flex items-center justify-between">
