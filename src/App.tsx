@@ -252,18 +252,7 @@ function App() {
     })
   }, [showCameras])
 
-  const getRobotsInCam = (camId: number) => {
-    return gameState.robots.filter(robot => {
-      if (robot.id === 'gen') {
-        if (camId === 1 && robot.currentCam === 1) return true;
-        if (camId === 3 && robot.currentCam === 3) return true;
-        if (camId === 4 && robot.currentCam === 4) return true;
-        // camId 100 = left door, 101 = right door
-        return false;
-      }
-      return robot.currentCam === camId && robot.moveNight <= gameState.currentNight;
-    });
-  };
+  ;
 
   // Game timer
   useEffect(() => {
